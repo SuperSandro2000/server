@@ -1,0 +1,13 @@
+{
+  "type": "metadata",
+  "domain": "wikipedia",
+  "stage": "experimental",
+  "name": "Wikipedia",
+  "description": "Adds artist biographies sourced from Wikipedia, picking the article matching the user's preferred language whenever one exists. Looks up articles via the MusicBrainz artist id and (where needed) Wikidata sitelinks.",
+  "codeowners": ["@music-assistant"],
+  "requirements": [],
+  "documentation": "",
+  "multi_instance": false,
+  "builtin": true,
+  "icon": "wikipedia"
+}
