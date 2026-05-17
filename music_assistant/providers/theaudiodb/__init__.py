@@ -83,6 +83,27 @@ CONF_ENABLE_ARTIST_METADATA = "enable_artist_metadata"
 CONF_ENABLE_ALBUM_METADATA = "enable_album_metadata"
 CONF_ENABLE_TRACK_METADATA = "enable_track_metadata"
 
+# TheAudioDB uses ISO 639-1 codes for most translations but country-ish codes for
+# a handful of languages. Map every recognised suffix back to its ISO 639-1 code
+# so we can tag the resulting description with its actual language.
+TADB_SUFFIX_TO_ISO: dict[str, str] = {
+    "EN": "en",
+    "DE": "de",
+    "FR": "fr",
+    "IT": "it",
+    "ES": "es",
+    "PT": "pt",
+    "NL": "nl",
+    "RU": "ru",
+    "PL": "pl",
+    "HU": "hu",
+    "CN": "zh",
+    "JP": "ja",
+    "SE": "sv",
+    "NO": "nb",
+    "IL": "he",
+}
+
 
 async def setup(
     mass: MusicAssistant, manifest: ProviderManifest, config: ProviderConfig
@@ -245,15 +266,9 @@ class AudioDbMetadataProvider(MetadataProvider):
             if link := artist_obj.get(key):
                 metadata.links.add(MediaItemLink(type=link_type, url=link))
         # description/biography
-        lang_code, lang_country = self.mass.metadata.locale.split("_")
-        if desc := artist_obj.get(f"strBiography{lang_country}") or (
-            desc := artist_obj.get(f"strBiography{lang_code.upper()}")
-        ):
-            metadata.description = desc
-        elif artist_obj.get("strBiographyEN"):
-            metadata.description = artist_obj.get("strBiographyEN")
-        else:
-            metadata.description = artist_obj.get("strBiography")
+        metadata.description, metadata.description_language = self._localized_field(
+            artist_obj, "strBiography"
+        )
         # images
         if not self.config.get_value(CONF_ENABLE_IMAGES):
             return metadata
@@ -294,15 +309,9 @@ class AudioDbMetadataProvider(MetadataProvider):
             )
 
         # description
-        lang_code, lang_country = self.mass.metadata.locale.split("_")
-        if desc := adb_album.get(f"strDescription{lang_country}") or (
-            desc := adb_album.get(f"strDescription{lang_code.upper()}")
-        ):
-            metadata.description = desc
-        elif adb_album.get("strDescriptionEN"):
-            metadata.description = adb_album.get("strDescriptionEN")
-        else:
-            metadata.description = adb_album.get("strDescription")
+        metadata.description, metadata.description_language = self._localized_field(
+            adb_album, "strDescription"
+        )
         metadata.review = adb_album.get("strReview")
         # images
         if not self.config.get_value(CONF_ENABLE_IMAGES):
@@ -351,15 +360,9 @@ class AudioDbMetadataProvider(MetadataProvider):
             metadata.genres = {genre}
         metadata.mood = adb_track.get("strMood")
         # description
-        lang_code, lang_country = self.mass.metadata.locale.split("_")
-        if desc := adb_track.get(f"strDescription{lang_country}") or (
-            desc := adb_track.get(f"strDescription{lang_code.upper()}")
-        ):
-            metadata.description = desc
-        elif adb_track.get("strDescriptionEN"):
-            metadata.description = adb_track.get("strDescriptionEN")
-        else:
-            metadata.description = adb_track.get("strDescription")
+        metadata.description, metadata.description_language = self._localized_field(
+            adb_track, "strDescription"
+        )
         # images
         if not self.config.get_value(CONF_ENABLE_IMAGES):
             return metadata
@@ -401,6 +404,26 @@ class AudioDbMetadataProvider(MetadataProvider):
             )
             await self.mass.music.albums.update_item_in_library(track.album.item_id, track.album)
         return metadata
+
+    def _localized_field(self, obj: dict[str, Any], prefix: str) -> tuple[str | None, str | None]:
+        """Pick the best-matching localized field, returning its text and ISO 639-1 language.
+
+        Tries the user's region code first (covers TheAudioDB's CN/JP/SE/NO/IL quirk
+        where the field suffix is a country-style code, not ISO 639-1), then the language
+        code, then English, then the generic field. Returns ``(None, None)`` if nothing
+        is available.
+        """
+        parts = self.mass.metadata.locale.split("_", 1)
+        lang_code = parts[0].upper()
+        region_code = parts[1].upper() if len(parts) > 1 else ""
+        for suffix in (region_code, lang_code, "EN"):
+            if not suffix:
+                continue
+            if value := obj.get(f"{prefix}{suffix}"):
+                return value, TADB_SUFFIX_TO_ISO.get(suffix)
+        if value := obj.get(prefix):
+            return value, None
+        return None, None
 
     @use_cache(86400 * 90, persistent=True)  # Cache for 90 days
     async def _get_data(self, endpoint: str, **kwargs: Any) -> dict[str, Any] | None:
