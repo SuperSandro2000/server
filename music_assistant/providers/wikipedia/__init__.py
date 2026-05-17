@@ -103,7 +103,7 @@ class WikipediaMetadataProvider(MetadataProvider):
         for lang in languages:
             if title := titles_by_lang.get(lang):
                 if extract := await self._fetch_summary(lang, title):
-                    return MediaItemMetadata(description=extract)
+                    return MediaItemMetadata(description=extract, description_language=lang)
         return None
 
     async def _musicbrainz_relations(self, mbid: str) -> list[MusicBrainzRelation] | None:
