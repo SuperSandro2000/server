@@ -1271,6 +1271,20 @@ class MetaDataController(CoreController):
                 if metadata := await provider.get_artist_metadata(artist):
                     if prefer_local_genres:
                         metadata = replace(metadata, genres=None)
+                    # smart-merge for description: when an earlier provider seeded
+                    # the bio with a language other than the user's preferred one
+                    # (typically an English fallback), let a later provider replace
+                    # it with a user-language match. Otherwise fall through to the
+                    # generic first-writer-wins merge.
+                    pref = self.preferred_language
+                    if (
+                        metadata.description
+                        and metadata.description_language == pref
+                        and artist.metadata.description_language != pref
+                    ):
+                        artist.metadata.description = metadata.description
+                        artist.metadata.description_language = metadata.description_language
+                        metadata = replace(metadata, description=None, description_language=None)
                     artist.metadata.update(metadata)
                     self.logger.debug(
                         "Fetched metadata for Artist %s on provider %s",
