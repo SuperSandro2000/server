@@ -1,15 +1,9 @@
-"""Wikipedia Metadata provider for Music Assistant.
+"""
+Wikipedia Metadata provider for Music Assistant.
 
-Adds artist biographies sourced from Wikipedia, preferring the article matching
-the user's preferred language. Resolves articles by MusicBrainz artist id:
-
-1. Inspect the artist's MusicBrainz URL relations for a per-language Wikipedia
-   link (this is the cheap path; MB's response is shared with the MusicBrainz
-   metadata provider and cached).
-2. If no relation matches the desired language, resolve the artist's Wikidata
-   Q-id (also from the MB relations) and ask Wikidata for sitelinks, which is
-   the canonical hub of cross-language Wikipedia articles.
-3. Fetch the lead-paragraph summary from the Wikipedia REST API.
+Provides artist biographies in the user's preferred language, resolving the
+article through MusicBrainz URL relations and (where MusicBrainz lacks coverage)
+Wikidata sitelinks.
 """
 
 from __future__ import annotations
@@ -68,7 +62,6 @@ class WikipediaMetadataProvider(MetadataProvider):
     @property
     def priority(self) -> int:
         """Priority for this provider (lower = more preferred)."""
-        # below TheAudioDB (20) so a TheAudioDB description wins when both providers have one
         return 25
 
     async def handle_async_init(self) -> None:
@@ -76,12 +69,11 @@ class WikipediaMetadataProvider(MetadataProvider):
         self.throttler = Throttler(rate_limit=1, period=1)
 
     async def get_artist_metadata(self, artist: Artist) -> MediaItemMetadata | None:
-        """Fetch an artist's Wikipedia summary in the user's preferred language."""
+        """Retrieve metadata for an artist on Wikipedia."""
         if not artist.mbid:
             return None
 
         preferred_lang = self.mass.metadata.preferred_language
-        # try the user's language first, then English as a universal fallback
         languages: list[str] = [preferred_lang]
         if preferred_lang != "en":
             languages.append("en")
@@ -92,8 +84,7 @@ class WikipediaMetadataProvider(MetadataProvider):
 
         titles_by_lang = _wiki_titles_by_lang(relations)
 
-        # if any of our wanted languages aren't already covered by MB,
-        # fall through to Wikidata sitelinks to fill the gaps
+        # use Wikidata sitelinks to fill in any languages MusicBrainz didn't list
         missing = [lang for lang in languages if lang not in titles_by_lang]
         if missing and (qid := _wikidata_qid(relations)):
             sitelinks = await self._wikidata_sitelinks(qid, tuple(sorted(missing)))
@@ -107,7 +98,7 @@ class WikipediaMetadataProvider(MetadataProvider):
         return None
 
     async def _musicbrainz_relations(self, mbid: str) -> list[MusicBrainzRelation] | None:
-        """Return the MusicBrainz URL relations for an artist (or None if unavailable)."""
+        """Return the MusicBrainz URL relations for an artist."""
         mb_provider = cast("MusicbrainzProvider | None", self.mass.get_provider("musicbrainz"))
         if mb_provider is None:
             return None
@@ -119,7 +110,12 @@ class WikipediaMetadataProvider(MetadataProvider):
 
     @use_cache(86400 * 90, persistent=True)
     async def _wikidata_sitelinks(self, qid: str, languages: tuple[str, ...]) -> dict[str, str]:
-        """Return ``{lang: article_title}`` for the requested languages on a Wikidata entity."""
+        """
+        Return Wikipedia article titles for a Wikidata entity keyed by language.
+
+        :param qid: Wikidata entity id (e.g. ``"Q12345"``).
+        :param languages: ISO 639-1 codes to request sitelinks for.
+        """
         sitefilter = "|".join(f"{lang}wiki" for lang in languages)
         data = await self._get_json(
             WIKIDATA_API_URL,
@@ -146,12 +142,17 @@ class WikipediaMetadataProvider(MetadataProvider):
 
     @use_cache(86400 * 90, persistent=True)
     async def _fetch_summary(self, lang: str, title: str) -> str | None:
-        """Return the lead-paragraph summary for a Wikipedia article, or None."""
+        """
+        Return the lead-paragraph summary of a Wikipedia article.
+
+        :param lang: Wikipedia language edition (``"en"``, ``"de"``, ...).
+        :param title: Article title as it appears in the URL.
+        """
         url = f"https://{lang}.wikipedia.org/api/rest_v1/page/summary/{quote(title, safe='')}"
         data = await self._get_json(url)
         if not data:
             return None
-        # disambiguation pages still return 200; skip them, they aren't bios
+        # disambiguation pages return 200 OK but the extract is not a bio
         if data.get("type") == "disambiguation":
             return None
         extract = data.get("extract")
@@ -162,7 +163,7 @@ class WikipediaMetadataProvider(MetadataProvider):
     async def _get_json(
         self, url: str, params: dict[str, str] | None = None
     ) -> dict[str, Any] | None:
-        """HTTP GET with throttling and a Wikipedia-compliant User-Agent."""
+        """Perform a throttled JSON GET request, returning ``None`` on any failure."""
         headers = {
             "User-Agent": f"Music Assistant/{self.mass.version} (https://music-assistant.io)"
         }
@@ -186,7 +187,7 @@ class WikipediaMetadataProvider(MetadataProvider):
 
 
 def _wiki_titles_by_lang(relations: list[MusicBrainzRelation]) -> dict[str, str]:
-    """Extract ``{lang: article_title}`` from MusicBrainz wikipedia URL relations."""
+    """Return Wikipedia article titles keyed by language from MusicBrainz URL relations."""
     result: dict[str, str] = {}
     for relation in relations:
         if relation.type != "wikipedia" or not relation.url:
@@ -205,7 +206,7 @@ def _wiki_titles_by_lang(relations: list[MusicBrainzRelation]) -> dict[str, str]
 
 
 def _wikidata_qid(relations: list[MusicBrainzRelation]) -> str | None:
-    """Extract the Wikidata Q-id from MusicBrainz URL relations."""
+    """Return the Wikidata entity id from MusicBrainz URL relations, if present."""
     for relation in relations:
         if relation.type != "wikidata" or not relation.url:
             continue

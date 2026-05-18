@@ -83,9 +83,8 @@ CONF_ENABLE_ARTIST_METADATA = "enable_artist_metadata"
 CONF_ENABLE_ALBUM_METADATA = "enable_album_metadata"
 CONF_ENABLE_TRACK_METADATA = "enable_track_metadata"
 
-# TheAudioDB uses ISO 639-1 codes for most translations but country-ish codes for
-# a handful of languages. Map every recognised suffix back to its ISO 639-1 code
-# so we can tag the resulting description with its actual language.
+# TheAudioDB field suffix -> ISO 639-1 language code. CN/JP/SE/NO/IL use country-style
+# codes that don't match the ISO language code, so the mapping is explicit.
 TADB_SUFFIX_TO_ISO: dict[str, str] = {
     "EN": "en",
     "DE": "de",
@@ -406,13 +405,14 @@ class AudioDbMetadataProvider(MetadataProvider):
         return metadata
 
     def _localized_field(self, obj: dict[str, Any], prefix: str) -> tuple[str | None, str | None]:
-        """Pick the best-matching localized field, returning its text and ISO 639-1 language.
-
-        Tries the user's region code first (covers TheAudioDB's CN/JP/SE/NO/IL quirk
-        where the field suffix is a country-style code, not ISO 639-1), then the language
-        code, then English, then the generic field. Returns ``(None, None)`` if nothing
-        is available.
         """
+        Return the best-matching localized text for ``prefix`` and its ISO 639-1 language.
+
+        :param obj: TheAudioDB response object to read fields from.
+        :param prefix: Field name prefix (e.g. ``"strBiography"`` or ``"strDescription"``).
+        """
+        # region-first covers TheAudioDB's CN/JP/SE/NO/IL country-style suffixes,
+        # then fall back to the language code, English, and finally the suffix-less field
         parts = self.mass.metadata.locale.split("_", 1)
         lang_code = parts[0].upper()
         region_code = parts[1].upper() if len(parts) > 1 else ""

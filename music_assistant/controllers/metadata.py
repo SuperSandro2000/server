@@ -1271,11 +1271,9 @@ class MetaDataController(CoreController):
                 if metadata := await provider.get_artist_metadata(artist):
                     if prefer_local_genres:
                         metadata = replace(metadata, genres=None)
-                    # smart-merge for description: when an earlier provider seeded
-                    # the bio with a language other than the user's preferred one
-                    # (typically an English fallback), let a later provider replace
-                    # it with a user-language match. Otherwise fall through to the
-                    # generic first-writer-wins merge.
+                    # let a later provider with a user-language description replace
+                    # an earlier fallback-language one (typical case: TheAudioDB English
+                    # fallback being replaced by a Wikipedia article in the user's language)
                     pref = self.preferred_language
                     if (
                         metadata.description

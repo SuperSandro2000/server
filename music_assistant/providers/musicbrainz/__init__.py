@@ -36,8 +36,8 @@ LUCENE_SPECIAL = r'([+\-&|!(){}\[\]\^"~*?:\\\/])'
 
 SUPPORTED_FEATURES: set[ProviderFeature] = {ProviderFeature.ARTIST_METADATA}
 
-# Mapping from MusicBrainz URL relation "type" slug to our LinkType enum.
-# See https://musicbrainz.org/relationships/artist-url for the full set.
+# MusicBrainz URL relation "type" slug -> our LinkType.
+# Full list: https://musicbrainz.org/relationships/artist-url
 URL_RELATION_TYPE_MAPPING: dict[str, LinkType] = {
     "wikipedia": LinkType.WIKIPEDIA,
     "allmusic": LinkType.ALLMUSIC,
@@ -45,8 +45,7 @@ URL_RELATION_TYPE_MAPPING: dict[str, LinkType] = {
     "official homepage": LinkType.WEBSITE,
 }
 
-# Social network relations use a single MB type but multiple destinations,
-# so we sniff the URL host to pick a more specific LinkType.
+# Social network relations share a single MB type, so the URL host picks the LinkType.
 SOCIAL_HOST_MAPPING: tuple[tuple[str, LinkType], ...] = (
     ("facebook.com", LinkType.FACEBOOK),
     ("instagram.com", LinkType.INSTAGRAM),
@@ -129,7 +128,7 @@ class MusicBrainzRelation(DataClassDictMixin):
 
     type: str
 
-    # optional - only populated on url-rels (work-rels and friends have other targets)
+    # optional: only populated on url-rels
     url: MusicBrainzUrl | None = None
 
 
@@ -358,7 +357,7 @@ class MusicbrainzProvider(MetadataProvider):
         raise InvalidDataError(msg)
 
     async def get_artist_metadata(self, artist: Artist) -> MediaItemMetadata | None:
-        """Surface MusicBrainz URL relations (Wikipedia, official site, socials, ...)."""
+        """Retrieve metadata for an artist on MusicBrainz."""
         if not artist.mbid:
             return None
         try:
@@ -379,6 +378,7 @@ class MusicbrainzProvider(MetadataProvider):
 
     @staticmethod
     def _link_type_for_relation(relation: MusicBrainzRelation) -> LinkType | None:
+        """Return the matching :class:`LinkType` for a MusicBrainz URL relation."""
         if link_type := URL_RELATION_TYPE_MAPPING.get(relation.type):
             return link_type
         if relation.type == "social network" and relation.url:
