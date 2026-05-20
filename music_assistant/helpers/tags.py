@@ -555,8 +555,12 @@ class AudioTags:
                 chapters.append(
                     AudioTagsChapter(
                         chapter_id=chapter_data["id"],
-                        position_start=chapter_data["start_time"],
-                        position_end=chapter_data["end_time"],
+                        # ffprobe emits start_time/end_time as JSON strings; cast so the
+                        # resulting MediaItemChapter compares equal to its deserialised form
+                        # on re-sync, otherwise merge_lists in MediaItemMetadata.update
+                        # appends the chapters again on every sync
+                        position_start=float(chapter_data["start_time"]),
+                        position_end=float(chapter_data["end_time"]),
                         title=chapter_data.get("tags", {}).get("title"),
                     )
                 )
